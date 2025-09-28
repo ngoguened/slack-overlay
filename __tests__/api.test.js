@@ -1,9 +1,14 @@
 // It's common to import the app and the database for testing purposes
 const app = require('../server'); // We'll need to export our app from server.js
 const request = require('supertest');
-const db = require('../database');
+const { db, initDb } = require('../database');
 
 describe('API Endpoints', () => {
+    // Before any tests run, initialize the database
+    beforeAll(async () => {
+        await initDb();
+    });
+
     let testUserId = 'testuser123';
     let testUserName = 'Test User';
     let testUserEmail = 'test@example.com';

@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { WebClient } = require('@slack/web-api');
-const db = require('./database.js'); // Import the database connection
+const { db, initDb } = require('./database.js'); // Import db and initializer
 const app = express();
 const port = 3000;
 
@@ -182,11 +182,16 @@ const JOB_INTERVAL_MS = 900000;
 
 // Start the server only if this file is run directly
 if (require.main === module) {
-    app.listen(port, () => {
-        console.log(`Server listening at http://localhost:${port}`);
-        // Run the job immediately on server start, then set the interval
-        assignFirstMessagesJob();
-        setInterval(assignFirstMessagesJob, JOB_INTERVAL_MS);
+    initDb().then(() => {
+        app.listen(port, () => {
+            console.log(`Server listening at http://localhost:${port}`);
+            // Run the job immediately on server start, then set the interval
+            assignFirstMessagesJob();
+            setInterval(assignFirstMessagesJob, JOB_INTERVAL_MS);
+        });
+    }).catch(err => {
+        console.error("Failed to initialize database:", err);
+        process.exit(1);
     });
 }
 
