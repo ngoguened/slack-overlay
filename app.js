@@ -38,7 +38,7 @@ async function showOverlay() {
         // Build the HTML to display the messages
         let html = '<h3>First Messages</h3><ul>';
         for (const message of result.data) {
-            html += `<li><strong>Channel ${message.channel_id}:</strong><br><em>"${message.message_content}"</em><br>- User: ${message.user_slack_id}</li><br>`;
+            html += `<strong>#${message.channel_name}:</strong><br><em>"${message.message_content}"</em><br>- User: ${message.user_slack_id}<br>`;
         }
         html += '</ul>';
         contentArea.innerHTML = html;

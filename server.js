@@ -108,8 +108,8 @@ app.post('/assign-first-messages', async (req, res) => {
                 const firstMessage = historyResponse.messages[0];
                 console.log(`Found first message in ${channel.name}: "${firstMessage.text}" by user ${firstMessage.user}`);
                 
-                const sql = 'INSERT OR IGNORE INTO first_messages (channel_id, message_ts, user_slack_id, message_content) VALUES (?,?,?,?)';
-                const params = [channel.id, firstMessage.ts, firstMessage.user, firstMessage.text];
+                const sql = 'INSERT OR IGNORE INTO first_messages (channel_id, channel_name, message_ts, user_slack_id, message_content) VALUES (?,?,?,?,?)';
+                const params = [channel.id, channel.name, firstMessage.ts, firstMessage.user, firstMessage.text];
                 
                 db.run(sql, params, function(err) {
                     if (err) {
@@ -144,10 +144,49 @@ app.get('/first-messages', (req, res) => {
     });
 });
 
+
+// --- Background Job ---
+
+// Function to perform the 'assign first messages' task
+const assignFirstMessagesJob = async () => {
+    console.log('--- Running scheduled job: Assigning first messages ---');
+    try {
+        const channelsResponse = await slackClient.conversations.list({
+            types: 'public_channel'
+        });
+
+        for (const channel of channelsResponse.channels) {
+            await slackClient.conversations.join({ channel: channel.id });
+            const historyResponse = await slackClient.conversations.history({
+                channel: channel.id,
+                oldest: '0',
+                limit: 1,
+                inclusive: true
+            });
+
+            if (historyResponse.messages && historyResponse.messages.length > 0) {
+                const firstMessage = historyResponse.messages[0];
+                const sql = 'INSERT OR IGNORE INTO first_messages (channel_id, channel_name, message_ts, user_slack_id, message_content) VALUES (?,?,?,?,?)';
+                const params = [channel.id, channel.name, firstMessage.ts, firstMessage.user, firstMessage.text];
+                db.run(sql, params);
+            }
+        }
+        console.log('--- Scheduled job finished ---');
+    } catch (error) {
+        console.error('Error during scheduled job:', error);
+    }
+};
+
+// Set the job to run every 15 minutes (900,000 milliseconds)
+const JOB_INTERVAL_MS = 900000;
+
 // Start the server only if this file is run directly
 if (require.main === module) {
     app.listen(port, () => {
         console.log(`Server listening at http://localhost:${port}`);
+        // Run the job immediately on server start, then set the interval
+        assignFirstMessagesJob();
+        setInterval(assignFirstMessagesJob, JOB_INTERVAL_MS);
     });
 }
 

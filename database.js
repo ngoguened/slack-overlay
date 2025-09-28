@@ -29,6 +29,7 @@ const db = new sqlite3.Database(DB_SOURCE, (err) => {
         db.run(`CREATE TABLE IF NOT EXISTS first_messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             channel_id TEXT UNIQUE,
+            channel_name TEXT,
             message_ts TEXT,
             user_slack_id TEXT,
             message_content TEXT
