@@ -114,6 +114,22 @@ app.post('/user', (req, res) => {
     });
 });
 
+// Endpoint to get a user (RESTORED for testing)
+app.get('/user/:slack_id', (req, res) => {
+    const sql = "SELECT * FROM users WHERE slack_id = ?";
+    db.get(sql, [req.params.slack_id], (err, row) => {
+        if (err) {
+            res.status(400).json({"error": err.message});
+            return;
+        }
+        if (row) {
+            res.json({ "message":"success", "data": row });
+        } else {
+            res.status(404).json({ "message": "user not found" });
+        }
+    });
+});
+
 // --- Background Job ---
 const fetchAndStoreMentionsJob = async () => {
     console.log('--- Running scheduled job: Fetching mentions for all users ---');
