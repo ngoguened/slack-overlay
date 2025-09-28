@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Slack Overlay",
+  "version": "1.0",
+  "description": "Adds a popup to Slack.",
+  "permissions": [
+    "activeTab"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://app.slack.com/*"],
+      "js": ["app.js"],
+      "css": ["styles.css"]
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "slack-overlay@example.com"
+    }
+  }
+}
