@@ -36,7 +36,8 @@ const initDb = () => {
                 message_ts TEXT UNIQUE,
                 user_slack_id TEXT,
                 channel_name TEXT,
-                message_content TEXT
+                message_content TEXT,
+                visible INTEGER DEFAULT 1
             )`, (err) => {
                 if (err) return reject(err);
                 console.log('Mentions table checked/created.');

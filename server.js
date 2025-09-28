@@ -53,8 +53,8 @@ const scanForUserMentions = async (userId) => {
                     // Use Promise.all to wait for all database writes to complete
                     const insertPromises = userMentions.map(mention => {
                         return new Promise((resolve, reject) => {
-                            const sql = 'INSERT OR IGNORE INTO mentions (message_ts, user_slack_id, channel_name, message_content) VALUES (?,?,?,?)';
-                            const params = [mention.ts, userId, channel.name, mention.text];
+                            const sql = 'INSERT OR IGNORE INTO mentions (message_ts, user_slack_id, channel_name, message_content, visible) VALUES (?,?,?,?,?)';
+                            const params = [mention.ts, userId, channel.name, mention.text, 1]; // Default visible to 1
                             db.run(sql, params, function(err) {
                                 if (err) {
                                     console.error('[DB ERROR] Failed to insert mention:', err);
@@ -90,14 +90,29 @@ app.get('/my-mentions/:userId', async (req, res) => {
     // First, perform a fresh scan for this user.
     await scanForUserMentions(userId);
 
-    // Then, query the database to get all stored mentions.
-    const sql = "SELECT * FROM mentions WHERE user_slack_id = ? ORDER BY message_ts DESC";
+    // Then, query the database to get all VISIBLE stored mentions.
+    const sql = "SELECT * FROM mentions WHERE user_slack_id = ? AND visible = 1 ORDER BY message_ts DESC";
     db.all(sql, [userId], (err, rows) => {
         if (err) {
             res.status(500).json({ "error": err.message });
             return;
         }
+        console.log(`[DB READ] For user ${userId}, found ${rows.length} visible mentions in database to send to frontend.`);
         res.json({ "message": "success", "data": rows });
+    });
+});
+
+// Endpoint to mark a mention as invisible
+app.post('/mentions/:message_ts/hide', (req, res) => {
+    const { message_ts } = req.params;
+    const sql = "UPDATE mentions SET visible = 0 WHERE message_ts = ?";
+    
+    db.run(sql, [message_ts], function(err) {
+        if (err) {
+            res.status(400).json({ "error": err.message });
+            return;
+        }
+        res.json({ "message": "success", "changes": this.changes });
     });
 });
 

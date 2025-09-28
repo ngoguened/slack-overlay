@@ -1,6 +1,4 @@
-// A hardcoded placeholder for the current user's Slack ID.
-// In a real app, this would be fetched after authentication.
-const MY_SLACK_USER_ID = 'U09HBKXFU75'; // <-- This ID has mentions in the logs.
+const MY_SLACK_USER_ID = 'U09HBKXFU75'; // This ID has mentions in the logs.
 
 // --- UI Creation ---
 
@@ -26,13 +24,8 @@ async function showOverlay() {
     contentArea.innerHTML = 'Loading your mentions...';
 
     try {
-        console.log('Fetching mentions for user:', MY_SLACK_USER_ID);
         const response = await fetch(`http://localhost:3000/my-mentions/${MY_SLACK_USER_ID}`);
         const result = await response.json();
-
-        // --- CRITICAL DEBUGGING STEP ---
-        console.log('Received data from server:', result);
-        // --------------------------------
 
         if (result.error) {
             contentArea.innerHTML = `Error: ${result.error}`;
@@ -40,20 +33,23 @@ async function showOverlay() {
         }
 
         if (!result.data || result.data.length === 0) {
-            contentArea.innerHTML = 'No recent mentions found for you.';
+            contentArea.innerHTML = 'No visible mentions found for you.';
             return;
         }
 
-        let html = '<h3>Your Stored Mentions</h3><ul>';
+        let html = '<h3>Your Visible Mentions</h3><ul>';
         for (const message of result.data) {
-            html += `<li><strong>#${message.channel_name}:</strong><br><em>"${message.message_content}"</em></li><br>`;
+            html += `<li data-message-ts="${message.message_ts}">
+                        <strong>#${message.channel_name}:</strong><br>
+                        <em>"${message.message_content}"</em>
+                        <button class="hide-btn">Hide</button>
+                     </li><br>`;
         }
         html += '</ul>';
         contentArea.innerHTML = html;
 
     } catch (error) {
         contentArea.innerHTML = 'Error: Could not connect to the server.';
-        console.error('Fetch error:', error);
     }
 }
 
@@ -61,7 +57,31 @@ function hideOverlay() {
     overlay.style.display = 'none';
 }
 
+function hideMention(event) {
+    // Check if a hide button was clicked
+    if (event.target.classList.contains('hide-btn')) {
+        const listItem = event.target.closest('li');
+        const messageTs = listItem.dataset.messageTs;
+        if (!messageTs) return;
+
+        // --- Optimistic UI Update ---
+        // 1. Hide the item immediately from the view.
+        listItem.style.display = 'none';
+
+        // 2. Send the update to the server in the background.
+        // We don't wait (`await`) for this to finish before the UI updates.
+        fetch(`http://localhost:3000/mentions/${messageTs}/hide`, { method: 'POST' })
+            .catch(error => {
+                // If the server update fails, log the error and maybe show the item again.
+                console.error('Failed to hide mention on server:', error);
+                listItem.style.display = ''; // Re-show the item on error
+            });
+    }
+}
+
 // --- Event Listeners ---
 
 button.addEventListener('click', showOverlay);
 overlay.querySelector('.close-button').addEventListener('click', hideOverlay);
+// Add a single event listener to the content area for delegation
+document.getElementById('overlay-content').addEventListener('click', hideMention);
