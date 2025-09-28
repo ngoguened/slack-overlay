@@ -21,16 +21,25 @@ const initDb = () => {
                 console.log('Users table checked/created.');
             });
 
-            db.run(`CREATE TABLE IF NOT EXISTS first_messages (
+            db.run(`CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                channel_id TEXT UNIQUE,
-                channel_name TEXT,
-                message_ts TEXT,
+                slack_id TEXT UNIQUE,
+                name TEXT, 
+                email TEXT
+            )`, (err) => {
+                if (err) return reject(err);
+                console.log('Users table checked/created.');
+            });
+
+            db.run(`CREATE TABLE IF NOT EXISTS mentions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_ts TEXT UNIQUE,
                 user_slack_id TEXT,
+                channel_name TEXT,
                 message_content TEXT
             )`, (err) => {
                 if (err) return reject(err);
-                console.log('First messages table checked/created.');
+                console.log('Mentions table checked/created.');
                 resolve();
             });
         });

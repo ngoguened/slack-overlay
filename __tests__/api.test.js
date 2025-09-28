@@ -1,5 +1,5 @@
 // It's common to import the app and the database for testing purposes
-const app = require('../server'); // We'll need to export our app from server.js
+const { app } = require('../server');
 const request = require('supertest');
 const { db, initDb } = require('../database');
 

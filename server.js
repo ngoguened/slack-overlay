@@ -2,192 +2,138 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { WebClient } = require('@slack/web-api');
-const { db, initDb } = require('./database.js'); // Import db and initializer
+const { db, initDb } = require('./database.js');
 const app = express();
 const port = 3000;
 
 app.use(cors());
-app.use(express.json()); // Middleware to parse JSON bodies
+app.use(express.json());
 
 const slackClient = new WebClient(process.env.SLACK_BOT_TOKEN);
 
-app.get('/latest-message', async (req, res) => {
+const findUserMentions = (messages, userId) => {
+    if (!messages || messages.length === 0) return [];
+    const userMention = `<@${userId}>`;
+    const specialMentions = ['<!channel>', '<!here>', '<!everyone>'];
+    return messages.filter(message => {
+        const text = message.text || '';
+        return text.includes(userMention) || specialMentions.some(mention => text.includes(mention));
+    });
+};
+
+// --- Reusable Scan Function ---
+const scanForUserMentions = async (userId) => {
+    console.log(`[SCAN] Starting live scan for user: ${userId}`);
     try {
-        const channelsResponse = await slackClient.conversations.list({
-            types: 'public_channel',
-            limit: 1
-        });
+        let channelCount = 0;
+        // Use the paginated iterator to get ALL channels, no matter how many.
+        for await (const page of slackClient.paginate('conversations.list', { types: 'public_channel', limit: 50 })) {
+            for (const channel of page.channels) {
+                channelCount++;
+                await slackClient.conversations.join({ channel: channel.id }).catch(e => {});
 
-        if (channelsResponse.channels.length === 0) {
-            return res.status(404).json({ error: 'No public channels found.' });
+                console.log(`[SCAN] --- Scanning Channel #${channelCount}: ${channel.name} ---`);
+            const historyResponse = await slackClient.conversations.history({ 
+                channel: channel.id, 
+                limit: 100 
+            });
+
+            if (historyResponse.messages && historyResponse.messages.length > 0) {
+                console.log(`[SCAN] Fetched ${historyResponse.messages.length} messages from #${channel.name}.`);
+                // --- CRITICAL DEBUGGING STEP ---
+                // Log the raw text of every message fetched from this channel.
+                console.log(`[RAW MESSAGES from #${channel.name}]:`, JSON.stringify(historyResponse.messages.map(m => m.text), null, 2));
+                // --------------------------------
+
+                const userMentions = findUserMentions(historyResponse.messages, userId);
+                
+                if (userMentions.length > 0) {
+                    console.log(`[SUCCESS] Found ${userMentions.length} mention(s) for ${userId} in #${channel.name}. Storing now...`);
+
+                    // Use Promise.all to wait for all database writes to complete
+                    const insertPromises = userMentions.map(mention => {
+                        return new Promise((resolve, reject) => {
+                            const sql = 'INSERT OR IGNORE INTO mentions (message_ts, user_slack_id, channel_name, message_content) VALUES (?,?,?,?)';
+                            const params = [mention.ts, userId, channel.name, mention.text];
+                            db.run(sql, params, function(err) {
+                                if (err) {
+                                    console.error('[DB ERROR] Failed to insert mention:', err);
+                                    return reject(err);
+                                }
+                                resolve();
+                            });
+                        });
+                    });
+                    await Promise.all(insertPromises);
+                    console.log(`[SUCCESS] Stored ${userMentions.length} mention(s) for ${userId} from #${channel.name}.`);
+
+                } else {
+                    console.log(`[INFO] No mentions for ${userId} found in the latest messages from #${channel.name}.`);
+                }
+            } else {
+                 console.log(`[INFO] No messages found in #${channel.name}.`);
+            }
         }
-
-        const firstChannel = channelsResponse.channels[0];
-
-        await slackClient.conversations.join({
-            channel: firstChannel.id
-        });
-
-        const historyResponse = await slackClient.conversations.history({
-            channel: firstChannel.id,
-            limit: 1
-        });
-
-        if (historyResponse.messages.length === 0) {
-            return res.status(404).json({ error: 'No messages found in the channel.' });
         }
-
-        const latestMessage = historyResponse.messages[0];
-        res.json({ message: latestMessage.text });
-
+        console.log(`[SCAN] Finished live scan for user: ${userId}. Scanned a total of ${channelCount} channels.`);
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Something went wrong.' });
+        console.error(`[ERROR] Failed to fetch mentions for user ${userId}:`, error);
     }
+};
+
+// --- API Endpoints ---
+
+// Triggers a live scan, then reads from the DB
+app.get('/my-mentions/:userId', async (req, res) => {
+    const { userId } = req.params;
+    
+    // First, perform a fresh scan for this user.
+    await scanForUserMentions(userId);
+
+    // Then, query the database to get all stored mentions.
+    const sql = "SELECT * FROM mentions WHERE user_slack_id = ? ORDER BY message_ts DESC";
+    db.all(sql, [userId], (err, rows) => {
+        if (err) {
+            res.status(500).json({ "error": err.message });
+            return;
+        }
+        res.json({ "message": "success", "data": rows });
+    });
 });
 
-// New endpoint to create a user
+// Endpoint to create a user (RESTORED)
 app.post('/user', (req, res) => {
     const { slack_id, name, email } = req.body;
-    const sql = 'INSERT INTO users (slack_id, name, email) VALUES (?,?,?)';
-    const params = [slack_id, name, email];
-
-    db.run(sql, params, function(err, result) {
+    const sql = 'INSERT OR IGNORE INTO users (slack_id, name, email) VALUES (?,?,?)';
+    db.run(sql, [slack_id, name, email], function(err) {
         if (err) {
             res.status(400).json({ "error": err.message });
             return;
         }
-        res.json({
-            "message": "success",
-            "data": { id: this.lastID, slack_id, name, email }
-        });
+        res.json({ "message": "success", "data": { id: this.lastID } });
     });
 });
-
-// New endpoint to get a user
-app.get('/user/:slack_id', (req, res) => {
-    const sql = "select * from users where slack_id = ?";
-    const params = [req.params.slack_id];
-    db.get(sql, params, (err, row) => {
-        if (err) {
-          res.status(400).json({"error":err.message});
-          return;
-        }
-        res.json({
-            "message":"success",
-            "data": row
-        });
-      });
-});
-
-// New endpoint to find and assign the first message of each channel
-app.post('/assign-first-messages', async (req, res) => {
-    try {
-        console.log('Fetching all public channels...');
-        const channelsResponse = await slackClient.conversations.list({
-            types: 'public_channel'
-        });
-
-        for (const channel of channelsResponse.channels) {
-            console.log(`Processing channel: ${channel.name}`);
-
-            // First, join the channel
-            await slackClient.conversations.join({
-                channel: channel.id
-            });
-            console.log(`Joined channel: ${channel.name}`);
-
-            const historyResponse = await slackClient.conversations.history({
-                channel: channel.id,
-                oldest: '0', // From the beginning of time
-                limit: 1, // We only need the first one
-                inclusive: true
-            });
-
-            if (historyResponse.messages && historyResponse.messages.length > 0) {
-                const firstMessage = historyResponse.messages[0];
-                console.log(`Found first message in ${channel.name}: "${firstMessage.text}" by user ${firstMessage.user}`);
-                
-                const sql = 'INSERT OR IGNORE INTO first_messages (channel_id, channel_name, message_ts, user_slack_id, message_content) VALUES (?,?,?,?,?)';
-                const params = [channel.id, channel.name, firstMessage.ts, firstMessage.user, firstMessage.text];
-                
-                db.run(sql, params, function(err) {
-                    if (err) {
-                        console.error(`Error saving to database for channel ${channel.name}:`, err.message);
-                    } else if (this.changes > 0) {
-                        console.log(`Stored first message for channel ${channel.name}`);
-                    } else {
-                        console.log(`First message for channel ${channel.name} already stored.`);
-                    }
-                });
-            }
-        }
-        res.json({ "message": "success", "detail": "Assignment process completed." });
-    } catch (error) {
-        console.error('Error in /assign-first-messages:', error);
-        res.status(500).json({ "error": "Failed to assign first messages." });
-    }
-});
-
-// Endpoint to get all records from the first_messages table
-app.get('/first-messages', (req, res) => {
-    const sql = "SELECT * FROM first_messages ORDER BY channel_id";
-    db.all(sql, [], (err, rows) => {
-        if (err) {
-            res.status(400).json({"error": err.message});
-            return;
-        }
-        res.json({
-            "message": "success",
-            "data": rows
-        });
-    });
-});
-
 
 // --- Background Job ---
-
-// Function to perform the 'assign first messages' task
-const assignFirstMessagesJob = async () => {
-    console.log('--- Running scheduled job: Assigning first messages ---');
-    try {
-        const channelsResponse = await slackClient.conversations.list({
-            types: 'public_channel'
-        });
-
-        for (const channel of channelsResponse.channels) {
-            await slackClient.conversations.join({ channel: channel.id });
-            const historyResponse = await slackClient.conversations.history({
-                channel: channel.id,
-                oldest: '0',
-                limit: 1,
-                inclusive: true
-            });
-
-            if (historyResponse.messages && historyResponse.messages.length > 0) {
-                const firstMessage = historyResponse.messages[0];
-                const sql = 'INSERT OR IGNORE INTO first_messages (channel_id, channel_name, message_ts, user_slack_id, message_content) VALUES (?,?,?,?,?)';
-                const params = [channel.id, channel.name, firstMessage.ts, firstMessage.user, firstMessage.text];
-                db.run(sql, params);
-            }
+const fetchAndStoreMentionsJob = async () => {
+    console.log('--- Running scheduled job: Fetching mentions for all users ---');
+    db.all("SELECT slack_id FROM users", [], async (err, users) => {
+        if (err || !users) return;
+        console.log(`Found ${users.length} user(s) to scan for in background.`);
+        for (const user of users) {
+            await scanForUserMentions(user.slack_id);
         }
         console.log('--- Scheduled job finished ---');
-    } catch (error) {
-        console.error('Error during scheduled job:', error);
-    }
+    });
 };
 
-// Set the job to run every 15 minutes (900,000 milliseconds)
-const JOB_INTERVAL_MS = 900000;
-
-// Start the server only if this file is run directly
+// --- Server Startup ---
 if (require.main === module) {
     initDb().then(() => {
         app.listen(port, () => {
             console.log(`Server listening at http://localhost:${port}`);
-            // Run the job immediately on server start, then set the interval
-            assignFirstMessagesJob();
-            setInterval(assignFirstMessagesJob, JOB_INTERVAL_MS);
+            fetchAndStoreMentionsJob(); // Run once on startup
+            setInterval(fetchAndStoreMentionsJob, 900000); // Run every 15 mins
         });
     }).catch(err => {
         console.error("Failed to initialize database:", err);
@@ -195,5 +141,4 @@ if (require.main === module) {
     });
 }
 
-// Export the app for testing
-module.exports = app;
+module.exports = { app, findUserMentions };
