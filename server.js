@@ -2,17 +2,20 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { WebClient } = require('@slack/web-api');
-const https = require('https');
-const fs = require('fs');
 const { db, initDb } = require('./database.js');
 const app = express();
 const port = 3000;
 
-// SSL certificate options
-const options = {
-  key: fs.readFileSync('./.certs/key.pem'),
-  cert: fs.readFileSync('./.certs/cert.pem')
-};
+// --- HTTPS setup for development ---
+let https, fs, options;
+if (process.env.NODE_ENV !== 'test') {
+    https = require('https');
+    fs = require('fs');
+    options = {
+        key: fs.readFileSync('./.certs/key.pem'),
+        cert: fs.readFileSync('./.certs/cert.pem')
+    };
+}
 
 app.use(cors());
 app.use(express.json());
@@ -187,11 +190,19 @@ const fetchAndStoreMentionsJob = () => {
 // --- Server Startup ---
 if (require.main === module) {
     initDb().then(() => {
-        https.createServer(options, app).listen(port, () => {
-            console.log(`Server is running! To install, visit https://localhost:${port}/install`);
-            fetchAndStoreMentionsJob(); // Run on startup
-            setInterval(fetchAndStoreMentionsJob, 900000); // Run every 15 mins
-        });
+        if (process.env.NODE_ENV !== 'test') {
+            // Start HTTPS server for development
+            https.createServer(options, app).listen(port, () => {
+                console.log(`Server is running! To install, visit https://localhost:${port}/install`);
+                fetchAndStoreMentionsJob(); // Run on startup
+                setInterval(fetchAndStoreMentionsJob, 900000); // Run every 15 mins
+            });
+        } else {
+            // Start standard HTTP server for testing
+            app.listen(port, () => {
+                console.log(`Test server running on http://localhost:${port}`);
+            });
+        }
     });
 }
 
