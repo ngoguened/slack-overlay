@@ -1,3 +1,14 @@
+.install-link {
+    display: inline-block;
+    padding: 10px 15px;
+    background-color: #4A154B; /* Slack purple */
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    font-weight: bold;
+    margin-top: 10px;
+}
+
 .overlay-button {
     position: fixed;
     top: 20px;

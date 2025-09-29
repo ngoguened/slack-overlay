@@ -4,8 +4,12 @@
 # Environment Variables
 .env
 
+# Local SSL Certificates
+/.certs
+
 # Database
 db.sqlite
+test_db.sqlite
 
 # Build and Test artifacts
 /coverage

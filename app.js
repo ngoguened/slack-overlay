@@ -24,7 +24,7 @@ async function showOverlay() {
     contentArea.innerHTML = 'Loading your mentions...';
 
     try {
-        const response = await fetch(`http://localhost:3000/my-mentions/${MY_SLACK_USER_ID}`);
+        const response = await fetch(`https://localhost:3000/my-mentions/${MY_SLACK_USER_ID}`);
         const result = await response.json();
 
         if (result.error) {
@@ -33,7 +33,12 @@ async function showOverlay() {
         }
 
         if (!result.data || result.data.length === 0) {
-            contentArea.innerHTML = 'No visible mentions found for you.';
+            contentArea.innerHTML = `
+                <h3>No Mentions Found</h3>
+                <p>We haven't found any recent mentions for you in the workspaces you've connected.</p>
+                <p>If you haven't installed the app yet, or want to add it to another workspace, please do so here:</p>
+                <a href="https://localhost:3000/install" target="_blank" class="install-link">Add to Slack</a>
+            `;
             return;
         }
 
@@ -70,7 +75,7 @@ function hideMention(event) {
 
         // 2. Send the update to the server in the background.
         // We don't wait (`await`) for this to finish before the UI updates.
-        fetch(`http://localhost:3000/mentions/${messageTs}/hide`, { method: 'POST' })
+        fetch(`https://localhost:3000/mentions/${messageTs}/hide`, { method: 'POST' })
             .catch(error => {
                 // If the server update fails, log the error and maybe show the item again.
                 console.error('Failed to hide mention on server:', error);
