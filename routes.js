@@ -44,7 +44,11 @@ router.get('/oauth/redirect', async (req, res) => {
         db.run(userSql, [authed_user.id, userInfo.user.real_name, userInfo.user.profile.email]);
 
         console.log(`[AUTH SUCCESS] Successfully added/updated user ${authed_user.id} and workspace ${team.id}`);
-        res.send('<h1>Success!</h1><p>The Slack Overlay has been installed. You can now close this window and return to Slack.</p>');
+        
+        // Redirect the user back to the Slack app. The user ID is passed in the URL hash.
+        // The content script running on app.slack.com will be able to read it.
+        const redirectUrl = `https://app.slack.com/#slackOverlayUserId=${authed_user.id}`;
+        res.redirect(redirectUrl);
 
     } catch (error) {
         console.error("OAuth Error:", error);

@@ -1,6 +1,5 @@
-const MY_SLACK_USER_ID = 'U09HBKXFU75';
-
-// --- Client-Side Cache ---
+// --- Globals ---
+let currentUserId = null;
 let mentionsCache = null;
 
 // --- UI Creation ---
@@ -72,12 +71,46 @@ function renderMentions(mentions) {
     contentArea.innerHTML = html;
 }
 
+// --- User ID Management ---
+
+function checkForUserIdInUrl() {
+    const hash = window.location.hash;
+    const regex = /slackOverlayUserId=(U[A-Z0-9]{8,})/;
+    const match = hash.match(regex);
+    
+    if (match && match[1]) {
+        const userId = match[1];
+        console.log(`Found user ID in URL hash: ${userId}. Storing it.`);
+        localStorage.setItem('slackOverlayUserId', userId);
+        
+        // Clean the hash from the URL so it's not visible to the user.
+        history.replaceState(null, null, ' ');
+        
+        return userId;
+    }
+    return null;
+}
+
+function getUserIdFromStorage() {
+    return localStorage.getItem('slackOverlayUserId');
+}
+
 async function fetchAndRenderMentions() {
     const contentArea = document.getElementById('overlay-content');
+
+    if (!currentUserId) {
+        contentArea.innerHTML = `
+            <p>We couldn't find your User ID.</p>
+            <p>Please install or re-install the app for your workspace:</p>
+            <a href="https://localhost:3000/install" target="_blank" class="install-link">Add to Slack</a>
+        `;
+        return;
+    }
+
     contentArea.innerHTML = 'Loading your mentions...';
 
     try {
-        const response = await fetch(`https://localhost:3000/my-mentions/${MY_SLACK_USER_ID}`);
+        const response = await fetch(`https://localhost:3000/my-mentions/${currentUserId}`);
         const result = await response.json();
 
         if (result.error) {
@@ -122,8 +155,27 @@ function hideMention(event) {
     }
 }
 
+// --- Initializer ---
+function initializeApp() {
+    // The very first thing we do is check the URL for an ID.
+    const userIdFromUrl = checkForUserIdInUrl();
+    
+    // Then we try to get it from storage. This ensures that even if it's not in the URL,
+    // we still load it if the user has authenticated before.
+    currentUserId = userIdFromUrl || getUserIdFromStorage();
+
+    if (!currentUserId) {
+        console.log("Initialization: No User ID found. The user needs to authorize the app.");
+    } else {
+        console.log(`Initialization: Using User ID "${currentUserId}".`);
+    }
+}
+
 // --- Event Listeners ---
 button.addEventListener('click', showOverlay);
 overlay.querySelector('.close-button').addEventListener('click', hideOverlay);
 document.getElementById('refresh-btn').addEventListener('click', fetchAndRenderMentions);
 document.getElementById('overlay-content').addEventListener('click', hideMention);
+
+// --- Start the app ---
+initializeApp();
