@@ -37,6 +37,22 @@
     z-index: 1001; /* Higher z-index to be on top of the button */
 }
 
+.overlay-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.overlay-header h3 {
+    margin: 0;
+}
+
+#refresh-btn {
+    padding: 5px 10px;
+    cursor: pointer;
+}
+
 .close-button {
     position: absolute;
     top: 5px;
@@ -45,4 +61,27 @@
     border: none;
     background: none;
     font-size: 18px;
+}
+
+.workspace-list {
+    margin-top: 15px;
+}
+
+.workspace-group {
+    margin-bottom: 20px;
+}
+
+.workspace-group h4 {
+    margin-bottom: 10px;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 5px;
+}
+
+.channel-list, .mention-list {
+    list-style: none;
+    padding-left: 15px;
+}
+
+.mention-list li {
+    margin-bottom: 10px;
 }

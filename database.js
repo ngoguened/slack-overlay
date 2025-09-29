@@ -31,6 +31,7 @@ const initDb = () => {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 slack_user_id TEXT NOT NULL,
                 slack_workspace_id TEXT NOT NULL,
+                slack_workspace_name TEXT,
                 access_token TEXT NOT NULL,
                 UNIQUE(slack_user_id, slack_workspace_id)
             )`, (err) => {

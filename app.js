@@ -1,7 +1,9 @@
-const MY_SLACK_USER_ID = 'U09HBKXFU75'; // This ID has mentions in the logs.
+const MY_SLACK_USER_ID = 'U09HBKXFU75';
+
+// --- Client-Side Cache ---
+let mentionsCache = null;
 
 // --- UI Creation ---
-
 const button = document.createElement('button');
 button.className = 'overlay-button';
 button.innerHTML = '@';
@@ -10,7 +12,11 @@ document.body.appendChild(button);
 const overlay = document.createElement('div');
 overlay.className = 'overlay';
 overlay.innerHTML = `
-    <div id="overlay-content">Click the button to fetch your mentions.</div>
+    <div class="overlay-header">
+        <h3>Your Mentions</h3>
+        <button id="refresh-btn">Refresh</button>
+    </div>
+    <div id="overlay-content"></div>
     <button class="close-button">X</button>
 `;
 overlay.style.display = 'none';
@@ -18,8 +24,55 @@ document.body.appendChild(overlay);
 
 // --- Functions ---
 
-async function showOverlay() {
-    overlay.style.display = 'block';
+function renderMentions(mentions) {
+    const contentArea = document.getElementById('overlay-content');
+    if (!mentions || mentions.length === 0) {
+        contentArea.innerHTML = `
+            <p>No visible mentions found.</p>
+            <p>Click "Refresh" to scan, or install the app in a new workspace:</p>
+            <a href="https://localhost:3000/install" target="_blank" class="install-link">Add to Slack</a>
+        `;
+        return;
+    }
+
+    // Group mentions by workspace, then by channel
+    const groupedByWorkspace = mentions.reduce((acc, mention) => {
+        const wsName = mention.slack_workspace_name || 'Unknown Workspace';
+        const chName = mention.channel_name || 'Unknown Channel';
+        if (!acc[wsName]) {
+            acc[wsName] = {};
+        }
+        if (!acc[wsName][chName]) {
+            acc[wsName][chName] = [];
+        }
+        acc[wsName][chName].push(mention);
+        return acc;
+    }, {});
+
+    let html = '<div class="workspace-list">';
+    for (const workspaceName in groupedByWorkspace) {
+        html += `<div class="workspace-group">
+                    <h4>${workspaceName}</h4>
+                    <ul class="channel-list">`;
+        for (const channelName in groupedByWorkspace[workspaceName]) {
+            html += `<li>
+                        <strong>#${channelName}</strong>
+                        <ul class="mention-list">`;
+            for (const message of groupedByWorkspace[workspaceName][channelName]) {
+                html += `<li data-message-ts="${message.message_ts}">
+                            <em>"${message.message_content}"</em>
+                            <button class="hide-btn">Hide</button>
+                         </li>`;
+            }
+            html += `</ul></li>`;
+        }
+        html += `</ul></div>`;
+    }
+    html += `</div>`;
+    contentArea.innerHTML = html;
+}
+
+async function fetchAndRenderMentions() {
     const contentArea = document.getElementById('overlay-content');
     contentArea.innerHTML = 'Loading your mentions...';
 
@@ -29,32 +82,25 @@ async function showOverlay() {
 
         if (result.error) {
             contentArea.innerHTML = `Error: ${result.error}`;
+            mentionsCache = null;
             return;
         }
-
-        if (!result.data || result.data.length === 0) {
-            contentArea.innerHTML = `
-                <h3>No Mentions Found</h3>
-                <p>We haven't found any recent mentions for you in the workspaces you've connected.</p>
-                <p>If you haven't installed the app yet, or want to add it to another workspace, please do so here:</p>
-                <a href="https://localhost:3000/install" target="_blank" class="install-link">Add to Slack</a>
-            `;
-            return;
-        }
-
-        let html = '<h3>Your Visible Mentions</h3><ul>';
-        for (const message of result.data) {
-            html += `<li data-message-ts="${message.message_ts}">
-                        <strong>#${message.channel_name}:</strong><br>
-                        <em>"${message.message_content}"</em>
-                        <button class="hide-btn">Hide</button>
-                     </li><br>`;
-        }
-        html += '</ul>';
-        contentArea.innerHTML = html;
+        
+        mentionsCache = result.data;
+        renderMentions(mentionsCache);
 
     } catch (error) {
         contentArea.innerHTML = 'Error: Could not connect to the server.';
+        mentionsCache = null;
+    }
+}
+
+function showOverlay() {
+    overlay.style.display = 'block';
+    if (mentionsCache) {
+        renderMentions(mentionsCache);
+    } else {
+        fetchAndRenderMentions();
     }
 }
 
@@ -63,30 +109,21 @@ function hideOverlay() {
 }
 
 function hideMention(event) {
-    // Check if a hide button was clicked
     if (event.target.classList.contains('hide-btn')) {
-        const listItem = event.target.closest('li');
-        const messageTs = listItem.dataset.messageTs;
-        if (!messageTs) return;
+        const mentionListItem = event.target.closest('li[data-message-ts]');
+        const messageTs = mentionListItem.dataset.messageTs;
+        if (!messageTs || !mentionsCache) return;
 
-        // --- Optimistic UI Update ---
-        // 1. Hide the item immediately from the view.
-        listItem.style.display = 'none';
+        mentionsCache = mentionsCache.filter(m => m.message_ts !== messageTs);
+        renderMentions(mentionsCache);
 
-        // 2. Send the update to the server in the background.
-        // We don't wait (`await`) for this to finish before the UI updates.
         fetch(`https://localhost:3000/mentions/${messageTs}/hide`, { method: 'POST' })
-            .catch(error => {
-                // If the server update fails, log the error and maybe show the item again.
-                console.error('Failed to hide mention on server:', error);
-                listItem.style.display = ''; // Re-show the item on error
-            });
+            .catch(error => console.error('Failed to hide mention on server:', error));
     }
 }
 
 // --- Event Listeners ---
-
 button.addEventListener('click', showOverlay);
 overlay.querySelector('.close-button').addEventListener('click', hideOverlay);
-// Add a single event listener to the content area for delegation
+document.getElementById('refresh-btn').addEventListener('click', fetchAndRenderMentions);
 document.getElementById('overlay-content').addEventListener('click', hideMention);

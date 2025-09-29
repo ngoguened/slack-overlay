@@ -68,9 +68,9 @@ app.get('/oauth/redirect', async (req, res) => {
         const { authed_user, team } = oauthResponse;
         
         // Save the new authorization to the database
-        const authSql = 'INSERT OR REPLACE INTO authorizations (slack_user_id, slack_workspace_id, access_token) VALUES (?, ?, ?)';
+        const authSql = 'INSERT OR REPLACE INTO authorizations (slack_user_id, slack_workspace_id, slack_workspace_name, access_token) VALUES (?, ?, ?, ?)';
         // For user tokens, the token is INSIDE the authed_user object.
-        db.run(authSql, [authed_user.id, team.id, authed_user.access_token]);
+        db.run(authSql, [authed_user.id, team.id, team.name, authed_user.access_token]);
 
         // Also save the user's info to our users table
         const userClient = new WebClient(authed_user.access_token); // <-- FIX HERE
@@ -97,7 +97,19 @@ app.get('/my-mentions/:userId', async (req, res) => {
     await scanForUserMentions(userId);
     console.log(`[API /my-mentions] Live scan finished for ${userId}. Querying database.`);
 
-    const sql = "SELECT * FROM mentions WHERE user_slack_id = ? AND visible = 1 ORDER BY message_ts DESC";
+    // Join mentions with authorizations to get the workspace name for each mention
+    const sql = `
+        SELECT
+            m.message_ts,
+            m.user_slack_id,
+            m.channel_name,
+            m.message_content,
+            a.slack_workspace_name
+        FROM mentions m
+        JOIN authorizations a ON m.slack_workspace_id = a.slack_workspace_id AND m.user_slack_id = a.slack_user_id
+        WHERE m.user_slack_id = ? AND m.visible = 1
+        ORDER BY a.slack_workspace_name, m.channel_name, m.message_ts DESC
+    `;
     db.all(sql, [userId], (err, rows) => {
         if (err) {
             res.status(500).json({ "error": err.message });
